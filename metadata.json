@@ -1,0 +1,5 @@
+{
+  "name": "YouTube Video Downloader Prep",
+  "description": "An intuitive web application for YouTube video management and preparation for download. Features include URL/search input, API key management, video metadata display, and AI-powered stream link generation.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,528 @@
+<main class="bg-brand-dark text-brand-light min-h-screen p-4 sm:p-6 md:p-8">
+  <div class="max-w-6xl mx-auto">
+    <header class="text-center mb-8">
+      <div class="flex justify-center items-center gap-4">
+        <svg class="w-12 h-12 text-brand-red" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+        </svg>
+        <h1 class="text-4xl sm:text-5xl font-bold">YouTube Content Prep</h1>
+      </div>
+      <p class="text-brand-gray mt-2">Enter a video, playlist, or channel URL to prepare for download.</p>
+    </header>
+
+    <!-- API Key & Search Section -->
+    <section class="bg-gray-800 rounded-xl p-6 mb-8 shadow-2xl border border-gray-700">
+      <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-end">
+        <app-api-key-input
+          [isApiKeyInvalid]="isApiKeyInvalid()"
+          (apiKeyChange)="youtubeApiKey.set($event)">
+        </app-api-key-input>
+        <app-gemini-api-key-input
+          (apiKeyChange)="geminiApiKey.set($event)">
+        </app-gemini-api-key-input>
+        <app-search-input
+          [disabled]="loading() || !youtubeApiKey() || isApiKeyInvalid()"
+          (search)="youtubeQuery.set($event); fetchDetails()">
+        </app-search-input>
+      </div>
+    </section>
+
+    <!-- Advanced Download Tools Section -->
+    <section class="bg-gray-800 rounded-xl p-6 mb-8 shadow-2xl border border-gray-700">
+      <h2 class="text-2xl font-bold mb-2 text-white">Advanced Download Tools</h2>
+      <p class="text-sm text-gray-400 mb-6">
+        Use these tools for direct downloads or to generate commands for local use with <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener noreferrer" class="text-brand-red hover:underline">yt-dlp</a> and <a href="https://ffmpeg.org/" target="_blank" rel="noopener noreferrer" class="text-brand-red hover:underline">FFMpeg</a>.
+      </p>
+
+      <!-- URL Input for this section -->
+      <div class="mb-6">
+        <label for="ffmpeg-url" class="block text-sm font-medium text-gray-300 mb-1">YouTube URL</label>
+        <input id="ffmpeg-url" type="text"
+               class="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-brand-red focus:border-transparent transition"
+               placeholder="https://www.youtube.com/watch?v=..."
+               [value]="ffmpegUrl()"
+               (input)="onFfmpegUrlChange($any($event.target).value)">
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- In-Browser Download -->
+        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex flex-col">
+          <h3 class="text-lg font-semibold text-white mb-2">1. In-Browser Download ⚠️</h3>
+          <p class="text-xs text-gray-500 mb-4 flex-grow">⚠️ <strong>Limited availability:</strong> Uses a third-party service that may be blocked by your network or unavailable. For reliable downloads, use the yt-dlp command generator below.</p>
+          <button (click)="fetchDirectDownloadLinks()" [disabled]="!ffmpegUrl() || isFetchingDirectLinks()" 
+                  class="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-md transition duration-300 flex items-center justify-center gap-2">
+            @if (isFetchingDirectLinks()) {
+              <div class="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+              <span>Fetching...</span>
+            } @else {
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              <span>Get Direct Links</span>
+            }
+          </button>
+
+          @if (directDownloadError(); as err) {
+            <div class="mt-4 bg-red-900/50 border border-red-700 text-red-200 px-3 py-2 rounded text-sm">
+              {{ err }}
+            </div>
+          }
+
+          @if (directDownloadLinks().length > 0) {
+            <div class="mt-4 border-t border-gray-600 pt-4 space-y-2">
+              <p class="text-sm font-semibold text-gray-200">Available Files:</p>
+              @for (link of directDownloadLinks(); track link.url) {
+                <a [href]="link.url" download class="flex items-center gap-3 bg-gray-700 hover:bg-gray-600 p-2 rounded-md transition-colors text-brand-red hover:text-red-400 group">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" /></svg>
+                  <span class="text-sm font-medium group-hover:underline">{{ link.type }} - {{ link.quality }}</span>
+                </a>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Command Generator -->
+        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex flex-col">
+           <h3 class="text-lg font-semibold text-white mb-2">2. yt-dlp Command Generator</h3>
+           <p class="text-xs text-gray-500 mb-4 flex-grow">Configure options and generate a command to run on your local machine.</p>
+           <div class="space-y-4">
+              <div>
+                <label for="ffmpeg-filename" class="block text-xs font-medium text-gray-400 mb-1">Output Filename (Optional)</label>
+                <input id="ffmpeg-filename" type="text"
+                      class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1.5 text-white text-sm"
+                      placeholder="my_video.mp4"
+                      [value]="ffmpegFilename()"
+                      (input)="ffmpegFilename.set($any($event.target).value)">
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                 <div>
+                    <label for="ffmpeg-quality" class="block text-xs font-medium text-gray-400 mb-1">Quality</label>
+                    <select id="ffmpeg-quality" (change)="ffmpegQuality.set($any($event.target).value)" [disabled]="ffmpegAudioOnly()"
+                            class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1.5 text-white text-sm disabled:opacity-50">
+                      @for(option of ffmpegQualityOptions; track option.value) { <option [value]="option.value" [selected]="option.value === ffmpegQuality()">{{ option.label }}</option> }
+                    </select>
+                  </div>
+                  <div>
+                    <label for="ffmpeg-format" class="block text-xs font-medium text-gray-400 mb-1">Format</label>
+                    <select id="ffmpeg-format" (change)="ffmpegFormat.set($any($event.target).value)" [disabled]="ffmpegAudioOnly()"
+                            class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1.5 text-white text-sm disabled:opacity-50">
+                      @for(format of ffmpegFormatOptions; track format) { <option [value]="format" [selected]="format === ffmpegFormat()">{{ format }}</option> }
+                    </select>
+                  </div>
+              </div>
+              <div class="flex items-center">
+                 <input type="checkbox" id="audio-only" class="h-4 w-4 rounded border-gray-500 bg-gray-700 text-brand-red focus:ring-brand-red" [checked]="ffmpegAudioOnly()" (change)="ffmpegAudioOnly.set($any($event.target).checked)">
+                 <label for="audio-only" class="ml-2 block text-sm text-gray-300">Audio Only (MP3)</label>
+              </div>
+              <button (click)="generateYtdlpCommand()" [disabled]="!ffmpegUrl()"
+                    class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 text-white font-bold py-2 px-4 rounded-md transition duration-300">
+              Generate Command
+            </button>
+           </div>
+           @if (generatedCommand(); as command) {
+            <div class="mt-4 pt-4 border-t border-gray-600">
+              <label class="block text-sm font-medium text-gray-300 mb-1">Generated Command</label>
+              <div class="flex gap-2">
+                <pre class="flex-grow bg-gray-900 border border-gray-700 rounded-md p-3 text-gray-300 text-xs overflow-x-auto"><code>{{ command }}</code></pre>
+                <button (click)="copyGeneratedCommand()"
+                        [class]="copiedGeneratedCommand() ? 'bg-green-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'"
+                        class="text-sm font-semibold py-2 px-3 rounded transition-colors duration-200 flex items-center justify-center gap-1.5 shrink-0">
+                  @if (copiedGeneratedCommand()) {
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Copied!</span>
+                  } @else {
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    <span>Copy</span>
+                  }
+                </button>
+              </div>
+            </div>
+           }
+        </div>
+      </div>
+    </section>
+
+    <!-- Welcome Message -->
+    @if (!loading() && !error() && !videoDetails() && !channelDetails() && !playlistDetails()) {
+      <div class="text-center bg-gray-800 p-8 rounded-lg border border-gray-700">
+        <h2 class="text-2xl font-semibold mb-4 text-white">Getting Started</h2>
+        <p class="text-gray-400 max-w-2xl mx-auto">
+          This tool helps you gather and prepare YouTube content. You can analyze single videos, entire channels, or specific playlists. All processing is done to find long-form, landscape (16:9) videos.
+        </p>
+        <ol class="text-left mt-6 space-y-2 max-w-md mx-auto text-gray-300">
+          <li class="flex items-start"><span class="bg-brand-red text-white rounded-full w-6 h-6 text-center font-bold mr-3 shrink-0">1</span><span>Enter your YouTube API Key to fetch live video data.</span></li>
+          <li class="flex items-start"><span class="bg-brand-red text-white rounded-full w-6 h-6 text-center font-bold mr-3 shrink-0">2</span><span>Paste a YouTube video, channel (@handle or /channel/), or playlist URL.</span></li>
+          <li class="flex items-start"><span class="bg-brand-red text-white rounded-full w-6 h-6 text-center font-bold mr-3 shrink-0">3</span><span>Click "Fetch" to load the content details.</span></li>
+          <li class="flex items-start"><span class="bg-brand-red text-white rounded-full w-6 h-6 text-center font-bold mr-3 shrink-0">4</span><span>Use the "Prepare for Download" buttons to generate fictional stream links.</span></li>
+        </ol>
+      </div>
+    }
+
+    <!-- Loading Skeleton -->
+    @if (loading()) {
+      <div class="bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700 animate-pulse">
+        <div class="w-full h-56 sm:h-80 bg-gray-700"></div>
+        <div class="p-6">
+          <div class="h-6 bg-gray-700 rounded w-3/4 mb-4"></div>
+          <div class="h-4 bg-gray-700 rounded w-1/4 mb-6"></div>
+          <div class="flex flex-wrap gap-x-4 gap-y-2 text-sm mb-6">
+            <div class="h-4 bg-gray-700 rounded w-20"></div>
+            <div class="h-4 bg-gray-700 rounded w-20"></div>
+            <div class="h-4 bg-gray-700 rounded w-24"></div>
+          </div>
+          <div class="h-12 bg-gray-700 rounded w-full"></div>
+        </div>
+      </div>
+    }
+
+    <!-- Error Message -->
+    @if (error(); as errorMessage) {
+      <app-error-message [message]="errorMessage"></app-error-message>
+    }
+
+    <!-- Single Video View -->
+    @if (videoDetails(); as video) {
+      <section class="bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700">
+        <div class="aspect-w-16 aspect-h-9">
+          <iframe [src]="getEmbedUrl(video.id) | safeUrl" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-full"></iframe>
+        </div>
+        <div class="p-6">
+          <h2 class="text-2xl font-bold mb-2 text-white">{{ video.snippet.title }}</h2>
+          <p class="text-gray-400 mb-4">By {{ video.snippet.channelTitle }}</p>
+
+          <div class="flex flex-col sm:flex-row gap-2 my-6">
+            <button (click)="isShareModalOpen.set(true)" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-md transition duration-300 flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg>
+                <span>Share</span>
+            </button>
+            <select
+              (change)="preferredQuality.set($any($event.target).value)"
+              class="bg-gray-700 border border-gray-600 rounded-md px-4 py-3 text-white focus:ring-2 focus:ring-brand-red focus:border-transparent transition w-full sm:w-auto">
+              @for(quality of qualityOptions; track quality) {
+                <option [value]="quality" [selected]="quality === preferredQuality()">{{ quality }}</option>
+              }
+            </select>
+            <button (click)="generateSingleVideoSummary()" [disabled]="isGeneratingSummary()" class="flex-grow bg-brand-red hover:bg-red-700 disabled:bg-gray-500 text-white font-bold py-3 px-4 rounded-md transition duration-300 flex items-center justify-center gap-2">
+              @if (isGeneratingSummary()) {
+                <div class="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                <span>Preparing...</span>
+              } @else {
+                <span>Prepare for Download with Gemini</span>
+              }
+            </button>
+          </div>
+
+          <!-- Tabs -->
+          <div>
+            <div class="border-b border-gray-700">
+              <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                <button (click)="activeTab.set('description')" 
+                        [class]="activeTab() === 'description' ? 'border-brand-red text-white' : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'" 
+                        class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors">
+                  Description
+                </button>
+                <button (click)="activeTab.set('details')" 
+                        [class]="activeTab() === 'details' ? 'border-brand-red text-white' : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'" 
+                        class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors">
+                  Details
+                </button>
+                @if(video.snippet.tags?.length) {
+                  <button (click)="activeTab.set('tags')" 
+                          [class]="activeTab() === 'tags' ? 'border-brand-red text-white' : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'" 
+                          class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors">
+                    Tags
+                  </button>
+                }
+              </nav>
+            </div>
+            <div class="py-6 min-h-[10rem]">
+              @switch (activeTab()) {
+                @case ('description') {
+                  <p class="text-gray-300 whitespace-pre-wrap max-h-60 overflow-y-auto pr-2">{{ video.snippet.description || 'No description available.' }}</p>
+                }
+                @case ('details') {
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm text-gray-300">
+                    <div><strong class="font-semibold text-gray-200 block">Published Date</strong><span>{{ video.snippet.publishedAt | date:'longDate' }}</span></div>
+                    <div><strong class="font-semibold text-gray-200 block">Category</strong><span>{{ getCategoryName(video.snippet.categoryId) }}</span></div>
+                    <div><strong class="font-semibold text-gray-200 block">Views</strong><span>{{ formatNumber(video.statistics.viewCount) }}</span></div>
+                    <div><strong class="font-semibold text-gray-200 block">Likes</strong><span>{{ formatNumber(video.statistics.likeCount) }}</span></div>
+                    <div><strong class="font-semibold text-gray-200 block">Duration</strong><span>{{ formatDuration(video.contentDetails.duration) }}</span></div>
+                  </div>
+                }
+                @case ('tags') {
+                  <div class="flex flex-wrap gap-2">
+                    @for(tag of video.snippet.tags; track tag) {
+                      <span class="bg-gray-700 text-gray-300 text-xs font-medium px-2.5 py-1 rounded-full">{{ tag }}</span>
+                    }
+                  </div>
+                }
+              }
+            </div>
+          </div>
+          
+          @if (parsedSingleVideoSummary().length > 0) {
+            <div class="mt-6 p-4 bg-gray-900 rounded-lg border border-gray-700">
+              <div class="flex justify-between items-center mb-3">
+                <h3 class="text-lg font-semibold text-brand-red">Fictional Download Options</h3>
+                <button (click)="copyAllFfmpegCommands()" title="Copy all FFMpeg commands"
+                        [class]="copiedAllFfmpegCommands() ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-gray-200'"
+                        class="text-sm font-semibold py-1.5 px-3 rounded transition-colors duration-200 flex items-center justify-center gap-1.5">
+                  @if (copiedAllFfmpegCommands()) {
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>All Copied!</span>
+                  } @else {
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3" /></svg>
+                    <span>Copy All Commands</span>
+                  }
+                </button>
+              </div>
+              <ul class="space-y-2">
+                @for(link of parsedSingleVideoSummary(); track link) {
+                  <li class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-2 bg-gray-800 rounded">
+                    <span class="text-gray-300 font-mono text-sm truncate mb-2 sm:mb-0" title="{{link}}">{{ link }}</span>
+                    <div class="flex items-center gap-2 shrink-0">
+                       <button (click)="copyFfmpegCommand(link, video.snippet.title)" title="Copy FFMpeg command for local download"
+                              class="text-sm font-semibold py-1 px-3 rounded transition-colors duration-200 flex items-center justify-center gap-1.5 w-[110px]"
+                              [class]="copiedFfmpegCommand() === link ? 'bg-green-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'">
+                        @if (copiedFfmpegCommand() === link) {
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>Copied!</span>
+                        } @else {
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3" /></svg>
+                          <span>FFMpeg</span>
+                        }
+                      </button>
+                      <button (click)="copyToClipboard(link)" title="Copy fictional URL"
+                              class="text-sm font-semibold py-1 px-3 rounded transition-colors duration-200 flex items-center justify-center gap-1.5 w-[90px]"
+                              [class]="copiedLink() === link ? 'bg-green-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'">
+                        @if (copiedLink() === link) {
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>Copied!</span>
+                        } @else {
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                          <span>Copy</span>
+                        }
+                      </button>
+                      <button (click)="simulateDownload(link)" [disabled]="downloadingLinks()[link] || downloadedLinks()[link]"
+                              class="text-sm font-semibold py-1 px-3 rounded transition-colors duration-200 flex items-center justify-center gap-1.5 w-[125px]"
+                              [class]="downloadingLinks()[link] ? 'bg-blue-600 text-white cursor-wait' : downloadedLinks()[link] ? 'bg-green-600 text-white' : 'bg-brand-red hover:bg-red-700 text-white'">
+                        @if (downloadingLinks()[link]) {
+                          <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                          <span>Downloading</span>
+                        } @else if (downloadedLinks()[link]) {
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                          <span>Downloaded</span>
+                        } @else {
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                          <span>Download</span>
+                        }
+                      </button>
+                    </div>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- Channel / Playlist View -->
+    @if (channelDetails() || playlistDetails()) {
+      <section>
+        <!-- Header -->
+        <div class="bg-gray-800 rounded-xl p-6 shadow-2xl border border-gray-700">
+          @if(channelDetails(); as channel) {
+            <div class="flex flex-col sm:flex-row items-center gap-6">
+                <img [src]="channel.snippet.thumbnails.medium.url" alt="Channel thumbnail" class="w-32 h-32 rounded-full border-4 border-gray-700">
+                <div class="text-center sm:text-left">
+                    <h2 class="text-3xl font-bold">{{ channel.snippet.title }}</h2>
+                    @if (channel.snippet.customUrl) {
+                      <p class="text-gray-400">{{ channel.snippet.customUrl }}</p>
+                    }
+                    <div class="flex justify-center sm:justify-start flex-wrap gap-4 text-sm text-gray-300 mt-2">
+                        <span>{{ formatNumber(channel.statistics.subscriberCount) }} subscribers</span>
+                        <span>&bull;</span>
+                        <span>{{ formatNumber(channel.statistics.videoCount) }} videos</span>
+                         <span>&bull;</span>
+                        <span>{{ formatNumber(channel.statistics.viewCount) }} views</span>
+                    </div>
+                     @if(channel.snippet.description) {
+                      <p class="text-gray-300 text-sm mt-4 max-h-24 overflow-y-auto border-t border-gray-700 pt-2">{{ channel.snippet.description }}</p>
+                    }
+                </div>
+            </div>
+            @if (channel.brandingSettings.image) {
+               <img [src]="channel.brandingSettings.image.bannerExternalUrl" alt="Channel banner" class="mt-6 w-full h-32 sm:h-48 rounded-lg object-cover">
+            }
+          } @else if (playlistDetails(); as playlist) {
+            <div class="flex flex-col sm:flex-row gap-6 items-start">
+              <img [src]="playlist.snippet.thumbnails.medium.url" alt="Playlist thumbnail" class="w-full sm:w-48 h-auto rounded-md object-cover">
+              <div>
+                  <h2 class="text-3xl font-bold mb-2">{{ playlist.snippet.title }}</h2>
+                  <p class="text-gray-400 mb-2">By {{ playlist.snippet.channelTitle }} &bull; Published on {{ playlist.snippet.publishedAt | date:'longDate' }}</p>
+                  @if(playlist.snippet.description) {
+                    <p class="text-gray-300 text-sm mb-4 max-h-24 overflow-y-auto">{{ playlist.snippet.description }}</p>
+                  }
+              </div>
+            </div>
+          }
+        </div>
+        
+        <!-- Action Bar & Video List -->
+        <div class="my-6 p-4 bg-gray-800 rounded-xl border border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <h3 class="text-xl font-semibold text-white">All Long-Form Videos (16:9, over 60s)</h3>
+          @if(channelVideos().length > 0) {
+            <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto items-center">
+              <select
+                (change)="preferredQuality.set($any($event.target).value)"
+                class="bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white focus:ring-2 focus:ring-brand-red focus:border-transparent transition w-full sm:w-auto">
+                @for(quality of qualityOptions; track quality) {
+                  <option [value]="quality" [selected]="quality === preferredQuality()">{{ quality }}</option>
+                }
+              </select>
+
+              <button (click)="generateAllSummaries()" [disabled]="loading()" 
+                      class="text-white font-bold py-2 px-6 rounded-md transition duration-300 w-full sm:w-auto"
+                      [class]="hasAnyFictionalLinks() ? 'bg-blue-600 hover:bg-blue-700' : 'bg-brand-red hover:bg-red-700 disabled:bg-gray-500'">
+                {{ hasAnyFictionalLinks() ? 'Re-Prepare All' : 'Prepare All for Download' }}
+              </button>
+
+              @if (hasAnyFictionalLinks()) {
+                <button (click)="simulateDownloadAll()" 
+                        class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-md transition duration-300 w-full sm:w-auto flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download All</span>
+                </button>
+              }
+            </div>
+          }
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            @for (videoWrapper of channelVideos(); track videoWrapper.video.id) {
+              <div class="bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700 flex flex-col">
+                <img [src]="videoWrapper.video.snippet.thumbnails.medium.url" alt="Video thumbnail" class="w-full h-40 object-cover">
+                <div class="p-4 flex flex-col flex-grow">
+                  <h4 class="font-semibold text-white leading-tight mb-2 flex-grow">{{ videoWrapper.video.snippet.title }}</h4>
+                  <p class="text-sm text-gray-400 mb-4">Duration: {{ formatDuration(videoWrapper.video.contentDetails.duration) }}</p>
+                  
+                   @if (videoWrapper.loading) {
+                    <div class="flex items-center gap-2 text-sm text-blue-300">
+                       <div class="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-300"></div>
+                       <span>Preparing...</span>
+                    </div>
+                  } @else if (videoWrapper.error) {
+                    <div class="text-sm text-red-400 font-semibold">{{ videoWrapper.error }}</div>
+                  } @else if (videoWrapper.summaryLinks.length > 0) {
+                    <div class="mt-2 text-sm text-gray-300 bg-gray-900 p-3 rounded-md border border-gray-700">
+                      <h5 class="font-bold text-brand-red mb-2">Fictional Links:</h5>
+                      <ul class="space-y-1">
+                        @for(link of videoWrapper.summaryLinks; track link) {
+                          <li class="flex items-center justify-between gap-1">
+                            <span class="text-gray-400 font-mono text-xs truncate" title="{{link}}">{{ link.split('/').pop() }}</span>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button (click)="copyFfmpegCommand(link, videoWrapper.video.snippet.title)" title="Copy FFMpeg command for local download" class="text-xs font-semibold py-0.5 px-2 rounded transition-colors duration-200 flex items-center justify-center gap-1"
+                                        [class]="copiedFfmpegCommand() === link ? 'bg-green-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'">
+                                  @if (copiedFfmpegCommand() === link) {
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    <span>Copied</span>
+                                  } @else {
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3" /></svg>
+                                    <span>FFMpeg</span>
+                                  }
+                                </button>
+                                <button (click)="copyToClipboard(link)" title="Copy fictional URL" class="text-xs font-semibold py-0.5 px-2 rounded transition-colors duration-200 flex items-center justify-center gap-1"
+                                        [class]="copiedLink() === link ? 'bg-green-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'">
+                                  @if (copiedLink() === link) {
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span>Copied</span>
+                                  } @else {
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                    <span>Copy</span>
+                                  }
+                                </button>
+                                <button (click)="simulateDownload(link)" [disabled]="downloadingLinks()[link] || downloadedLinks()[link]"
+                                    class="text-xs font-semibold py-0.5 px-2 rounded transition-colors duration-200 flex items-center justify-center gap-1"
+                                    [class]="downloadingLinks()[link] ? 'bg-blue-600 text-white cursor-wait' : downloadedLinks()[link] ? 'bg-green-600 text-white' : 'bg-brand-red hover:bg-red-700 text-white'">
+                                    @if (downloadingLinks()[link]) {
+                                      <svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                      <span>Wait...</span>
+                                    } @else if (downloadedLinks()[link]) {
+                                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                      <span>Done</span>
+                                    } @else {
+                                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                      <span>DL</span>
+                                    }
+                                </button>
+                            </div>
+                          </li>
+                        }
+                      </ul>
+                    </div>
+                  }
+                </div>
+              </div>
+            } @empty {
+              <div class="md:col-span-2 lg:col-span-3 text-center bg-gray-800 p-8 rounded-lg border border-gray-700">
+                <p class="text-gray-400">No long-form, 16:9 videos found in this collection.</p>
+              </div>
+            }
+          </div>
+        
+      </section>
+    }
+  </div>
+
+  <!-- Share Modal -->
+  @if(isShareModalOpen()) {
+    <div class="fixed inset-0 bg-black/75 flex items-center justify-center z-50" (click)="isShareModalOpen.set(false)">
+      <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md m-4 border border-gray-700" (click)="$event.stopPropagation()">
+        <div class="flex justify-between items-center p-4 border-b border-gray-700">
+          <h3 class="text-xl font-bold text-white">Share Video</h3>
+          <button (click)="isShareModalOpen.set(false)" class="text-gray-400 hover:text-white transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div class="p-6">
+          <label class="block text-sm font-medium text-gray-300 mb-2">Video Link</label>
+          <div class="flex gap-2">
+            <input type="text" [value]="videoUrl()" readonly class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-gray-200">
+            <button (click)="copyToClipboard(videoUrl())" class="text-sm font-semibold py-2 px-4 rounded transition-colors duration-200 flex items-center justify-center gap-2"
+                    [class]="copiedLink() === videoUrl() ? 'bg-green-600 text-white' : 'bg-brand-red hover:bg-red-700 text-white'">
+              @if(copiedLink() === videoUrl()) {
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Copied!</span>
+              } @else {
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2-2H9a2 2 0 01-2-2V9z" /><path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h6a2 2 0 00-2-2H5z" /></svg>
+                <span>Copy</span>
+              }
+            </button>
+          </div>
+          <div class="flex justify-center gap-4 mt-6">
+            <a [href]="shareLinks()?.email" class="flex flex-col items-center text-gray-400 hover:text-white transition">
+              <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" /><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" /></svg></div>
+              <span class="text-xs mt-1">Email</span>
+            </a>
+            <a [href]="shareLinks()?.twitter" target="_blank" rel="noopener noreferrer" class="flex flex-col items-center text-gray-400 hover:text-white transition">
+              <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616v.064c0 2.296 1.634 4.208 3.803 4.649-.625.17-1.295.215-1.986.17.618 1.953 2.423 3.377 4.564 3.414-1.616 1.267-3.646 2.021-5.86 2.021-1.041 0-2.064-.176-3.074-.537 2.09 1.353 4.58 2.143 7.278 2.143 8.39 0 12.518-6.94 12.1-12.753.882-.635 1.65-1.42 2.264-2.353z" /></svg></div>
+              <span class="text-xs mt-1">Twitter</span>
+            </a>
+            <a [href]="shareLinks()?.facebook" target="_blank" rel="noopener noreferrer" class="flex flex-col items-center text-gray-400 hover:text-white transition">
+              <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v2.385z" /></svg></div>
+              <span class="text-xs mt-1">Facebook</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</main>
